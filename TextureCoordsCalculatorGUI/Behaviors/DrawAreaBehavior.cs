@@ -12,27 +12,22 @@ namespace TextureCoordsCalculatorGUI.Behaviors
     enum ResizeDirection 
     {
         None, 
-
         TopLeft, 
-
         TopRight, 
-
         BottomLeft,
-        
         BottomRight 
     }
 
     public class DrawAreaBehavior : Behavior<Canvas>
     {
         private Point _topLeftPoint;
-        
         private Point _bottomRightPoint;
-
         private bool _isDragging;
-
         private Point _dragStartPoint;
-
         private ResizeDirection _resizeDirection;
+
+        private const double DrawThreshold = 5.0; // Threshold distance before drawing starts
+        private bool _hasMovedBeyondThreshold = false;
 
         public static readonly DependencyProperty ViewModelProperty
             = DependencyProperty.Register("ViewModel", typeof(MainViewModel), typeof(DrawAreaBehavior), new PropertyMetadata(null));
@@ -45,8 +40,6 @@ namespace TextureCoordsCalculatorGUI.Behaviors
 
         protected override void OnAttached()
         {
-         
-
             base.OnAttached();
             AssociatedObject.MouseDown += MouseDown;
             AssociatedObject.MouseMove += MouseMove;
@@ -61,7 +54,6 @@ namespace TextureCoordsCalculatorGUI.Behaviors
             AssociatedObject.MouseDown -= MouseDown;
             AssociatedObject.MouseMove -= MouseMove;
             AssociatedObject.MouseUp -= MouseUp;
-
         }
 
         private void MouseDown(object sender, MouseButtonEventArgs e)
@@ -90,19 +82,9 @@ namespace TextureCoordsCalculatorGUI.Behaviors
                 AssociatedObject.Children.Remove(Area.Rectangle);
             }
 
-            Area.Rectangle = new Rectangle
-            {
-                Stroke = Brushes.GhostWhite,
-                StrokeThickness = 2,
-                Fill = new SolidColorBrush(Color.FromArgb(80, 102, 255, 102))
-            };
-
             _topLeftPoint = pos;
-
-            Canvas.SetLeft(Area.Rectangle, _topLeftPoint.X);
-            Canvas.SetTop(Area.Rectangle, _topLeftPoint.Y);
-
-            AssociatedObject.Children.Add(Area.Rectangle);
+            _dragStartPoint = pos;
+            _hasMovedBeyondThreshold = false;
         }
 
         private void MouseMove(object sender, MouseEventArgs e)
@@ -134,6 +116,17 @@ namespace TextureCoordsCalculatorGUI.Behaviors
                 }
             }
 
+            if (!_hasMovedBeyondThreshold && !HasMovedBeyondThreshold(pos))
+            {
+                return;
+            }
+
+            if (!_hasMovedBeyondThreshold)
+            {
+                CreateRectangleAtStartPosition();
+                _hasMovedBeyondThreshold = true;
+            }
+
             var x = Math.Min(pos.X, _topLeftPoint.X);
             var y = Math.Min(pos.Y, _topLeftPoint.Y);
 
@@ -157,7 +150,7 @@ namespace TextureCoordsCalculatorGUI.Behaviors
                 return;
             }
 
-            if (Area.Rectangle != null)
+            if (Area.Rectangle != null && _hasMovedBeyondThreshold)
             {
                 _bottomRightPoint = e.GetPosition(AssociatedObject);
 
@@ -181,7 +174,6 @@ namespace TextureCoordsCalculatorGUI.Behaviors
             var imgTopLeft = new Point(left, top);
             var imgBottomRight = new Point(right, bottom);
 
-      
             ViewModel?.CalculateCoordinates((int)AssociatedObject.ActualWidth, (int)AssociatedObject.ActualHeight, imgTopLeft, imgBottomRight);
         }
 
@@ -220,6 +212,27 @@ namespace TextureCoordsCalculatorGUI.Behaviors
 
             Canvas.SetLeft(Area.Rectangle, left);
             Canvas.SetTop(Area.Rectangle, top);
+        }
+
+        private bool HasMovedBeyondThreshold(Point currentPosition)
+        {
+            var distance = Math.Sqrt(Math.Pow(currentPosition.X - _dragStartPoint.X, 2) + Math.Pow(currentPosition.Y - _dragStartPoint.Y, 2));
+            return distance > DrawThreshold;
+        }
+
+        private void CreateRectangleAtStartPosition()
+        {
+            Area.Rectangle = new Rectangle
+            {
+                Stroke = Brushes.GhostWhite,
+                StrokeThickness = 2,
+                Fill = new SolidColorBrush(Color.FromArgb(80, 102, 255, 102))
+            };
+
+            Canvas.SetLeft(Area.Rectangle, _topLeftPoint.X);
+            Canvas.SetTop(Area.Rectangle, _topLeftPoint.Y);
+
+            AssociatedObject.Children.Add(Area.Rectangle);
         }
 
         private static bool IsOnResizeHandle(Point pos, out ResizeDirection direction)
