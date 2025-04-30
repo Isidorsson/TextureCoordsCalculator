@@ -61,51 +61,56 @@ namespace TextureCoordsCalculatorGUI.ViewModels
         [RelayCommand]
         public async Task OpenImageFile(bool onlineMode)
         {
-            if (!onlineMode)
+            try
             {
-                var fileDialog = new SWF.OpenFileDialog
+                if (!onlineMode)
                 {
-                    DefaultExt = ".blp",
-                    Filter = "BLP Files (*.blp)|*.blp"
-                };
-
-                var result = fileDialog.ShowDialog();
-
-                if (result.HasValue && result.Value)
-                {
-                    _blpFile = new BlpFile(File.OpenRead(fileDialog.FileName));
-
-                }
-            }
-            else
-            {
-                InputDialog inputDialog = new();
-                var result = inputDialog.ShowDialog();
-
-                if (result.HasValue && result.Value)
-                {
-                    var stream = await _wagoService.GetCascFile((uint)inputDialog.FileDataId);
-                    
-                    if (stream is not null)
+                    var fileDialog = new SWF.OpenFileDialog
                     {
-                        try
+                        DefaultExt = ".blp",
+                        Filter = "BLP Files (*.blp)|*.blp"
+                    };
+
+                    var result = fileDialog.ShowDialog();
+
+                    if (result.HasValue && result.Value)
+                    {
+                        _blpFile = new BlpFile(File.OpenRead(fileDialog.FileName));
+                    }
+                }
+                else
+                {
+                    InputDialog inputDialog = new();
+                    var result = inputDialog.ShowDialog();
+
+                    if (result.HasValue && result.Value)
+                    {
+                        var stream = await _wagoService.GetCascFile((uint)inputDialog.FileDataId);
+
+                        if (stream is not null)
                         {
-                            _blpFile = new BlpFile(stream);
-                        }
-                        catch (Exception)
-                        {
-                            MessageBox.Show("Invalid file format", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                            return;
+                            try
+                            {
+                                _blpFile = new BlpFile(stream);
+                            }
+                            catch (Exception)
+                            {
+                                MessageBox.Show("Invalid file format", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                                return;
+                            }
                         }
                     }
-     
                 }
-        
+
+                if (_blpFile is not null)
+                {
+                    ApplyImage();
+                }
             }
-
-            if (_blpFile is not null)
-                ApplyImage();
-
+            catch (Exception ex)
+            {
+                MessageBox.Show($"An error occurred: {ex.Message}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         [RelayCommand]
