@@ -24,6 +24,8 @@ namespace TextureCoordsCalculatorGUI.ViewModels
  
         private BlpFile? _blpFile;
 
+        private string? _pngFilePath;
+
         private Coordinates? _coordinates;
 
         [ObservableProperty]
@@ -68,14 +70,29 @@ namespace TextureCoordsCalculatorGUI.ViewModels
                     var fileDialog = new SWF.OpenFileDialog
                     {
                         DefaultExt = ".blp",
-                        Filter = "BLP Files (*.blp)|*.blp"
+                        Filter = "BLP or PNG Files (*.blp;*.png)|*.blp;*.png|BLP Files (*.blp)|*.blp|PNG Files (*.png)|*.png"
                     };
 
                     var result = fileDialog.ShowDialog();
 
                     if (result.HasValue && result.Value)
                     {
-                        _blpFile = new BlpFile(File.OpenRead(fileDialog.FileName));
+                        var ext = Path.GetExtension(fileDialog.FileName).ToLowerInvariant();
+                        if (ext == ".blp")
+                        {
+                            _blpFile = new BlpFile(File.OpenRead(fileDialog.FileName));
+                            _pngFilePath = null;
+                        }
+                        else if (ext == ".png")
+                        {
+                            _blpFile = null;
+                            _pngFilePath = fileDialog.FileName;
+                        }
+                        else
+                        {
+                            MessageBox.Show("Unsupported file type.", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                            return;
+                        }
                     }
                 }
                 else
@@ -92,6 +109,7 @@ namespace TextureCoordsCalculatorGUI.ViewModels
                             try
                             {
                                 _blpFile = new BlpFile(stream);
+                                _pngFilePath = null;
                             }
                             catch (Exception)
                             {
@@ -102,7 +120,7 @@ namespace TextureCoordsCalculatorGUI.ViewModels
                     }
                 }
 
-                if (_blpFile is not null)
+                if (_blpFile is not null || _pngFilePath != null)
                 {
                     ApplyImage();
                 }
@@ -203,94 +221,124 @@ namespace TextureCoordsCalculatorGUI.ViewModels
 
         private void CalculateCroppedImage(Point leftTopPixels, Point bottomRightPixels)
         {
-            var width = (int)(bottomRightPixels.X - leftTopPixels.X);
-            var height = (int)(bottomRightPixels.Y - leftTopPixels.Y);
+            if (BlpImage == null)
+                return;
 
-            if (BlpImage != null &&
-            width > 0 && height > 0 &&
-            leftTopPixels.X >= 0 && leftTopPixels.Y >= 0 &&
-            bottomRightPixels.X <= BlpImage.PixelWidth && bottomRightPixels.Y <= BlpImage.PixelHeight)
+            // Ensure coordinates are in correct order
+            int x1 = (int)Math.Round(Math.Min(leftTopPixels.X, bottomRightPixels.X));
+            int y1 = (int)Math.Round(Math.Min(leftTopPixels.Y, bottomRightPixels.Y));
+            int x2 = (int)Math.Round(Math.Max(leftTopPixels.X, bottomRightPixels.X));
+            int y2 = (int)Math.Round(Math.Max(leftTopPixels.Y, bottomRightPixels.Y));
+
+            // Clamp to image bounds
+            x1 = Math.Max(0, Math.Min(x1, BlpImage.PixelWidth - 1));
+            y1 = Math.Max(0, Math.Min(y1, BlpImage.PixelHeight - 1));
+            x2 = Math.Max(0, Math.Min(x2, BlpImage.PixelWidth));
+            y2 = Math.Max(0, Math.Min(y2, BlpImage.PixelHeight));
+
+            int width = x2 - x1;
+            int height = y2 - y1;
+
+            if (width > 0 && height > 0)
             {
-     
-                    var crop = new CroppedBitmap(BlpImage, new((int)leftTopPixels.X, (int)leftTopPixels.Y, width, height));
-                    CroppedImage = crop;
-                    CroppedImageHeight = height;
-                    CroppedImageWidth = width;
- 
+                var crop = new CroppedBitmap(BlpImage, new(x1, y1, width, height));
+                CroppedImage = crop;
+                CroppedImageHeight = height;
+                CroppedImageWidth = width;
             }
         }
 
-
-        private void ApplyImage()
+        private void ApplyImage(int mipIndex = 0)
         {
-            if (_blpFile is null)
+            if (_blpFile is null && _pngFilePath == null)
                 return;
 
             try
             {
-                Bitmap? bmp = null;
-                int mipCount = _blpFile.MipMapCount;
-                int maxMipIndex = mipCount - 1;
-                bool mipLoaded = false;
-                Exception? lastMipException = null;
-
-                for (int i = 0; i < mipCount; i++)
+                if (_blpFile != null)
                 {
-                    try
-                    {
-                        if (i < 0 || i > maxMipIndex)
-                        {
-                            Debug.WriteLine($"Skipping mipmap {i}: index out of range.");
-                            continue;
-                        }
-                        bmp = _blpFile.GetBitmap(i);
-                        if (bmp != null && bmp.Width > 0 && bmp.Height > 0)
-                        {
-                            mipLoaded = true;
-                            break;
-                        }
-                    }
-                    catch (Exception ex)
-                    {
-                        lastMipException = ex;
-                        Debug.WriteLine($"Failed to decode mipmap {i}: {ex.Message}\n{ex.StackTrace}");
-                    }
-                }
+                    Bitmap? bmp = null;
+                    int mipCount = _blpFile.MipMapCount;
+                    int maxMipIndex = mipCount - 1;
+                    bool mipLoaded = false;
+                    Exception? lastMipException = null;
 
-                // Fallback: try loading mipmap 0 if none succeeded
-                if (!mipLoaded)
-                {
-                    try
+                    // Output debug info for the loaded BLP file
+                    string debugInfo = _blpFile.GetDebugInfo();
+                    Debug.WriteLine("BLP Debug Info:\n" + debugInfo);
+
+                    // Validate requested mipIndex
+                    if (mipIndex >= 0 && mipIndex <= maxMipIndex)
                     {
-                        bmp = _blpFile.GetBitmap(0);
-                        if (bmp != null && bmp.Width > 0 && bmp.Height > 0)
+                        try
                         {
-                            mipLoaded = true;
+                            bmp = _blpFile.GetBitmap(mipIndex);
+                            if (bmp != null && bmp.Width > 0 && bmp.Height > 0)
+                            {
+                                mipLoaded = true;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            lastMipException = ex;
+                            Debug.WriteLine($"Failed to decode requested mipmap {mipIndex}: {ex.Message}\n{ex.StackTrace}");
                         }
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        lastMipException = ex;
-                        Debug.WriteLine($"Fallback: Failed to decode mipmap 0: {ex.Message}\n{ex.StackTrace}");
+                        Debug.WriteLine($"Requested mipmap {mipIndex} is out of range. Valid range: 0 to {maxMipIndex}.");
                     }
-                }
 
-                if (!mipLoaded || bmp == null)
+                    // Fallback: try loading mipmap 0 if requested index failed
+                    if (!mipLoaded)
+                    {
+                        try
+                        {
+                            bmp = _blpFile.GetBitmap(0);
+                            if (bmp != null && bmp.Width > 0 && bmp.Height > 0)
+                            {
+                                mipLoaded = true;
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            lastMipException = ex;
+                            Debug.WriteLine($"Fallback: Failed to decode mipmap 0: {ex.Message}\n{ex.StackTrace}");
+                        }
+                    }
+
+                    if (!mipLoaded || bmp == null)
+                    {
+                        string errorMsg = $"Failed to decode mipmap {mipIndex} (and fallback to 0) from BLP file. All attempts resulted in errors.";
+                        if (lastMipException != null)
+                            errorMsg += $"\nLast error: {lastMipException.Message}\n{lastMipException.StackTrace}";
+                        MessageBox.Show(errorMsg + "\n\nBLP Debug Info:\n" + debugInfo, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                        return;
+                    }
+
+                    BlpImage = Utilities.BitMapToImg(bmp);
+                    ImageWidth = BlpImage.PixelWidth;
+                    ImageHeight = BlpImage.PixelHeight;
+                }
+                else if (_pngFilePath != null)
                 {
-                    string errorMsg = "Failed to decode any mipmap from BLP file. All attempts resulted in errors.";
-                    if (lastMipException != null)
-                        errorMsg += $"\nLast error: {lastMipException.Message}\n{lastMipException.StackTrace}";
-                    MessageBox.Show(errorMsg, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
-                    return;
+                    var bitmap = new BitmapImage();
+                    using (var stream = File.OpenRead(_pngFilePath))
+                    {
+                        bitmap.BeginInit();
+                        bitmap.CacheOption = BitmapCacheOption.OnLoad;
+                        bitmap.StreamSource = stream;
+                        bitmap.EndInit();
+                        bitmap.Freeze();
+                    }
+                    BlpImage = bitmap;
+                    ImageWidth = bitmap.PixelWidth;
+                    ImageHeight = bitmap.PixelHeight;
                 }
-
-                BlpImage = Utilities.BitMapToImg(bmp);
-                ImageWidth = BlpImage.PixelWidth;
-                ImageHeight = BlpImage.PixelHeight;
             }
             catch (Exception ex)
             {
-                MessageBox.Show($"Failed to load BLP image: {ex.Message}\n{ex.StackTrace}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                MessageBox.Show($"Failed to load image: {ex.Message}\n{ex.StackTrace}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
             }
         }
 

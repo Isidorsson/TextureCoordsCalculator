@@ -29,8 +29,10 @@ namespace TextureCoordsCalculatorGUI.Views
         private readonly FrozenDictionary<string, uint> _textures = Listfile.Instance.Textures;
         private readonly WagoService _wagoService;
         private string _selectedTexture = string.Empty;
+
         public string SelectedTexture
             => _selectedTexture;
+
         public TextureBrowserDialog(WagoService wagoService)
         {
             InitializeComponent();
@@ -82,8 +84,6 @@ namespace TextureCoordsCalculatorGUI.Views
                         var blpFile = new BlpFile(file);
                         Preview.Source = Utilities.BitMapToImg(blpFile.GetBitmap(0));
                     }
-
-
                 }
             }
         }
