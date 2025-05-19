@@ -226,10 +226,72 @@ namespace TextureCoordsCalculatorGUI.ViewModels
             if (_blpFile is null)
                 return;
 
-            BlpImage = Utilities.BitMapToImg(_blpFile.GetBitmap(0));
+            try
+            {
+                Bitmap? bmp = null;
+                int mipCount = _blpFile.MipMapCount;
+                int maxMipIndex = mipCount - 1;
+                bool mipLoaded = false;
+                Exception? lastMipException = null;
 
-            ImageWidth = BlpImage.PixelWidth;
-            ImageHeight = BlpImage.PixelHeight;
+                for (int i = 0; i < mipCount; i++)
+                {
+                    try
+                    {
+                        if (i < 0 || i > maxMipIndex)
+                        {
+                            Debug.WriteLine($"Skipping mipmap {i}: index out of range.");
+                            continue;
+                        }
+                        bmp = _blpFile.GetBitmap(i);
+                        if (bmp != null && bmp.Width > 0 && bmp.Height > 0)
+                        {
+                            mipLoaded = true;
+                            break;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        lastMipException = ex;
+                        Debug.WriteLine($"Failed to decode mipmap {i}: {ex.Message}\n{ex.StackTrace}");
+                    }
+                }
+
+                // Fallback: try loading mipmap 0 if none succeeded
+                if (!mipLoaded)
+                {
+                    try
+                    {
+                        bmp = _blpFile.GetBitmap(0);
+                        if (bmp != null && bmp.Width > 0 && bmp.Height > 0)
+                        {
+                            mipLoaded = true;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        lastMipException = ex;
+                        Debug.WriteLine($"Fallback: Failed to decode mipmap 0: {ex.Message}\n{ex.StackTrace}");
+                    }
+                }
+
+                if (!mipLoaded || bmp == null)
+                {
+                    string errorMsg = "Failed to decode any mipmap from BLP file. All attempts resulted in errors.";
+                    if (lastMipException != null)
+                        errorMsg += $"\nLast error: {lastMipException.Message}\n{lastMipException.StackTrace}";
+                    MessageBox.Show(errorMsg, "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+                    return;
+                }
+
+                BlpImage = Utilities.BitMapToImg(bmp);
+                ImageWidth = BlpImage.PixelWidth;
+                ImageHeight = BlpImage.PixelHeight;
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show($"Failed to load BLP image: {ex.Message}\n{ex.StackTrace}", "Error", MessageBoxButton.OK, MessageBoxImage.Error);
+            }
         }
 
         private static string NormalizeFloat(float value)
